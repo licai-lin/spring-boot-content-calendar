@@ -4,11 +4,15 @@ package com.your_domain_name.content_calendar_server_rest;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ConfigurableApplicationContext;
 // import org.springframework.context.annotation.Bean;
 // import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.RestClient;
 
+import com.your_domain_name.content_calendar_server_rest.config.ContentCalendarProperties;
+
+@EnableConfigurationProperties (ContentCalendarProperties.class)
 @SpringBootApplication
 public class ContentCalendarApplication {
 

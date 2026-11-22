@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.stereotype.Repository;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import com.your_domain_name.content_calendar_server_rest.model.Content;
 import com.your_domain_name.content_calendar_server_rest.model.Status;
@@ -69,4 +70,6 @@ public class ContentCollectionRepository {
     public void delete(Integer id) {
         contentList.removeIf(content -> content.id().equals(id));
     }
+
+
 }
