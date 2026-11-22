@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths-ignore:
       - 'docs/**'
+      - 'README*'
+      - 'readme*'
   push:
     branches: [main]
     paths-ignore:
       - 'docs/**'
+      - 'README*'
+      - 'readme*'
   workflow_dispatch:
 
 permissions:

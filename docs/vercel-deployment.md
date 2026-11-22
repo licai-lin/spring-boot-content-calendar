@@ -278,10 +278,10 @@ The root endpoint returns the application properties, including the updated
 still reads Neon content.
 
 Future pushes to `main` follow the same test-and-deploy process, except when all
-changed files are under `docs/`. CI uses `paths-ignore: ['docs/**']` for
-pushes and pull requests. Documentation-only changes start no CI run, so they
-also start no CD run. A change containing files outside `docs/` still triggers
-CI. To deploy manually, run **CI** on `main` and let successful CI trigger CD.
+changed files are under `docs/` or match root `README*` / `readme*` files.
+CI ignores these paths for pushes and pull requests. Changes only to these
+files start no CI run, so they also start no CD run. A change containing any
+other file still triggers CI. To deploy manually, run **CI** on `main` and let successful CI trigger CD.
 
 ## Troubleshooting
 
