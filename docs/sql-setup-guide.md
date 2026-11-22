@@ -1,5 +1,9 @@
 # SQL Setup Guide for Content Calendar
 
+> For the current Neon setup and the local H2 fallback, see
+> [Neon database setup](neon-database-setup.md). The walkthrough below describes
+> the earlier H2 learning setup.
+
 This guide explains the current H2 setup, how to reproduce the result in your
 screenshot, and what remains before the REST API stores content in SQL.
 

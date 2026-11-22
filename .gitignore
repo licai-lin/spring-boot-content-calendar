@@ -37,6 +37,7 @@ build/
 ._*
 
 ### Local environment and secrets ###
+.vercel/
 .env
 .env.*
 !.env.example

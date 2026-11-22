@@ -1,0 +1,11 @@
+.git
+.github
+.vercel
+.idea
+.vscode
+.DS_Store
+.env
+.env.*
+target
+docs
+*.log
