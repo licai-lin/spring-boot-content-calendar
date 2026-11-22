@@ -1,135 +1,308 @@
-# Deploy the API with GitHub Actions and Vercel
+# Guide 2: Deploy Spring Boot to Vercel through GitHub
 
-Pushes to `main` run Maven verification with H2, then deploy the source to
-Vercel, where `Dockerfile.vercel` builds the production container. Pull requests
-run verification only. Manual workflow runs deploy only when run on `main`.
+This guide follows the process that worked for this project:
 
-`vercel.json` selects the Container framework and disables Vercel's automatic
-Git deployments. GitHub Actions controls deployment after tests pass.
+1. Push the latest source to GitHub.
+2. Import the repository into Vercel and create a project.
+3. Add the environment variables in Vercel and deploy.
+4. Copy the Vercel token, Team ID, and Project ID into GitHub Actions secrets.
+5. Update the production description and push to `main` to test automatic deployment.
 
-## 1. Create or link the Vercel project
+Complete [Guide 1: Neon PostgreSQL integration](neon-database-setup.md) first.
+No local `.env` file or Vercel CLI linking is required for this dashboard-based setup.
 
-From the repository root, run:
+## 1. Understand the deployment files
 
-```sh
-npx --yes vercel@latest login
-npx --yes vercel@latest link
+The repository already contains these files:
+
+| File | Purpose |
+| --- | --- |
+| `Dockerfile.vercel` | Builds the Spring Boot JAR and runs it in a Java container |
+| `.dockerignore` | Excludes unnecessary files from the Docker build context |
+| `vercel.json` | Selects the Container preset and disables automatic native Git deployments |
+| `.github/workflows/ci.yml` | Runs tests and packages the app for pushes and pull requests to `main` |
+| `.github/workflows/deploy.yml` | Deploys the tested commit after successful CI on `main` |
+| `src/main/resources/application-production.properties` | Configures Neon, the production description, and the server port |
+
+### How the Dockerfile works
+
+The build stage packages the app:
+
+```dockerfile
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY pom.xml .
+COPY src ./src
+RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 ```
 
-Select your Vercel account/team and create a project named `content-calendar`,
-or link your existing project. Use this repository root as the project directory.
-Linking does not deploy the app. It creates ignored local project metadata in
-`.vercel/project.json` containing `orgId` and `projectId`.
+The runtime stage copies the generated JAR, renames it `app.jar`, and runs it:
 
-In the Vercel project settings:
+```dockerfile
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=build /workspace/target/content-calendar-0.0.1-SNAPSHOT.jar app.jar
+ENV SPRING_PROFILES_ACTIVE=production
+ENV PORT=8080
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+```
 
-| Setting | Value |
-| --- | --- |
-| Framework Preset | Container (also configured by `vercel.json`) |
-| Root Directory | Repository root (`.`) |
-| Production Branch, if connecting Git | `main` |
-| Build / Output / Install overrides | Leave unset; use the container build |
+`RUN mvn ... package` builds the JAR. `COPY --from=build ... app.jar` copies it
+into the runtime image. `ENTRYPOINT` runs the JAR when a container starts; it
+does not build the application. GitHub Actions runs tests before the deployment
+build, which skips tests during packaging.
 
-The container runtime is currently beta. The app uses the root
-`Dockerfile.vercel`, runs Java 17, and reads the `PORT` environment variable.
+Keep the exact filename `Dockerfile.vercel` at the repository root, beside
+`pom.xml`. Vercel detects it without an extra Dockerfile path setting.
 
-## 2. Add Vercel environment variables
+The Vercel configuration is:
 
-Open the project's **Settings → Environment Variables**, select **Production**,
-and add:
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "container",
+  "git": {
+    "deploymentEnabled": false
+  }
+}
+```
 
-| Name | Value |
-| --- | --- |
-| `SPRING_PROFILES_ACTIVE` | `production` |
-| `PORT` | `8080` |
-| `NEON_DATABASE_PASSWORD` | Your current Neon database password |
+The initial dashboard deployment is manual. Later automatic deployments are
+controlled by GitHub Actions, so they wait for tests to pass.
 
-The Neon JDBC URL and username remain in `application-production.properties`.
-The password is resolved from the environment at runtime. No `.env` file is
-required and the database password is not needed by GitHub Actions.
+## 2. Push the latest source to GitHub first
 
-## 3. Add GitHub Actions secrets
-
-Create a Vercel access token at <https://vercel.com/account/tokens>, scoped to
-the account/team that owns the project.
-
-In GitHub, open `licai-lin/spring-boot-content-calendar`, then
-**Settings → Secrets and variables → Actions → New repository secret**:
-
-| Secret | Where to obtain its value |
-| --- | --- |
-| `VERCEL_TOKEN` | The Vercel access token |
-| `VERCEL_ORG_ID` | `orgId` from local `.vercel/project.json` |
-| `VERCEL_PROJECT_ID` | `projectId` from local `.vercel/project.json` |
-
-The deploy job uses the GitHub environment `production`. You can create it under
-**Settings → Environments** to configure branch restrictions or reviewers, or
-allow GitHub to create it automatically on the first run.
-
-## 4. Commit and push
-
-Review the changed files, then commit the intended application and deployment
-changes and push to `main`. Include the JSON seed data and H2 profile from the
-database setup along with the new deployment files. Do not commit tokens,
-database passwords, `.vercel`, or build output.
+Review and stage the intended changes, including the deployment files, database
+configuration, H2 profile, and JSON seed data. Keep actual passwords and access
+tokens out of the commit.
 
 ```sh
 git status
 git diff
-# Stage the files you reviewed, then:
-git commit -m "Configure Neon production deployment with GitHub Actions and Vercel"
+# Stage the files you reviewed using git add <file>.
+git commit -m "Configure Neon and Vercel deployment"
 git push origin main
 ```
 
-In GitHub's **Actions** tab, open **Test and deploy**. The jobs run in order:
-
-1. **Test and package** executes `./mvnw verify`; tests use local H2.
-2. **Deploy production to Vercel** uploads source and asks Vercel to build and
-   deploy the container. The deployment command prints the resulting URL.
-
-If the source was pushed before you added secrets, add them and rerun the failed
-workflow. Subsequent pushes to `main` update the same production project.
-
-## 5. Check the hosted API
-
-Open your Vercel project URL with these paths:
+The repository used here is:
 
 ```text
-/actuator/health
-/api/content
-/api/content/filter/Building
+licai-lin/spring-boot-content-calendar
 ```
 
-Production connects to Neon and loads `data/content.json` if the content table is
-empty. Existing content is preserved. H2 Console is disabled, health details
-are hidden, and only the health and info Actuator endpoints are exposed.
+If Actions starts immediately, the test job can pass while deployment fails
+because the three Vercel secrets have not been configured yet. Finish the setup
+below, then trigger another run.
 
-## Local commands
+## 3. Import the repository into Vercel
 
-Local H2 with its console, without any secrets:
+On Vercel, choose **Add New → Project**, find the GitHub repository, and click
+**Import**. Authorize access to the repository if prompted.
+
+Use these settings on the New Project screen:
+
+| Setting | Value used for this project |
+| --- | --- |
+| Vercel Team | `Zero Builders` |
+| Project Name | `spring-boot-content-calendar` |
+| Git branch | `main` |
+| Root Directory | `./` |
+| Application Preset | `Container`, set by `vercel.json` |
+| Build Command | `None`; override off |
+| Output Directory | `None`; override off |
+| Install Command | `None`; override off |
+
+Leave all three **Build and Output Settings** overrides off. The Dockerfile
+provides the build and startup commands.
+
+## 4. Add the Vercel environment variables
+
+Expand **Environment Variables** before deploying and add three separate entries.
+Select **Production** as the environment for each entry.
+
+| Key | Value |
+| --- | --- |
+| `SPRING_PROFILES_ACTIVE` | `production` |
+| `PORT` | `8080` |
+| `NEON_DATABASE_PASSWORD` | Your actual Neon database password, without quotes |
+
+The database URL and username are already in
+`application-production.properties`. Its password property is:
+
+```properties
+spring.datasource.password=${NEON_DATABASE_PASSWORD}
+```
+
+The port property is:
+
+```properties
+server.port=${PORT:9090}
+```
+
+| Environment | Selected port |
+| --- | --- |
+| Local production run without `PORT` | 9090 |
+| Docker image default (`ENV PORT=8080`) | 8080 |
+| Vercel with `PORT=8080` | 8080 internally |
+
+A runtime environment variable can override the Dockerfile's `ENV` default.
+The hosted public URL uses HTTPS without an explicit `:8080` suffix.
+
+Click **Deploy**. Wait for the container build and application startup to complete.
+
+## 5. Confirm the first deployment works
+
+The successfully deployed project uses this domain:
+
+```text
+https://spring-boot-content-calendar.vercel.app
+```
+
+Open:
+
+```text
+https://spring-boot-content-calendar.vercel.app/actuator/health
+https://spring-boot-content-calendar.vercel.app/api/content
+https://spring-boot-content-calendar.vercel.app/api/content/filter/GraphQL
+```
+
+The GraphQL filter returned the matching article in the working deployment.
+The application connects to Neon and seeds `data/content.json` when the table
+is empty. Existing content is left unchanged on normal sequential restarts.
+
+## 6. Get the three GitHub secret values from vercel.com
+
+Only `VERCEL_TOKEN` is an access token. The other two values identify the team
+and project.
+
+### VERCEL_TOKEN
+
+1. Open [Vercel Account Settings → Tokens](https://vercel.com/account/tokens).
+2. Create a token named, for example, `Content Calendar`.
+3. Choose a scope that grants access to the team owning this project,
+   `Zero Builders`.
+4. Select an expiration and click **Create**.
+5. Copy the generated token value. If you already created and saved the
+   `Content Calendar` token, use that value.
+
+### VERCEL_ORG_ID
+
+1. Select **Zero Builders** in Vercel's team switcher.
+2. Open the **team's Settings → General**.
+3. Find **Team ID** and copy the full value, including the `team_` prefix.
+
+For this team-owned project, `VERCEL_ORG_ID` is the Team ID. Use the ID rather
+than the display name or team URL slug.
+
+### VERCEL_PROJECT_ID
+
+1. Open the **spring-boot-content-calendar** project on Vercel.
+2. Open the **project's Settings → General**.
+3. Find **Project ID** and copy the full value, including the `prj_` prefix.
+
+## 7. Add repository secrets in GitHub
+
+Open the GitHub repository, then go to:
+
+**Settings → Secrets and variables → Actions → Secrets → New repository secret**
+
+Create each entry separately under **Repository secrets**:
+
+| Secret name | Value from Vercel |
+| --- | --- |
+| `VERCEL_TOKEN` | Generated access token |
+| `VERCEL_ORG_ID` | Team ID (`team_...`) |
+| `VERCEL_PROJECT_ID` | Project ID (`prj_...`) |
+
+Use the exact secret names above. Do not put them under the **Variables** tab.
+The database password stays in Vercel; the workflow does not need it in GitHub.
+
+The workflow uses a GitHub environment named `production`. GitHub can create
+that environment on its first run. Repository secrets remain available to the
+job; adding environment-specific secrets is not required for this setup.
+
+## 8. Update the description and push to main
+
+This small change tests the entire automatic deployment process. In
+`src/main/resources/application-production.properties`, change:
+
+```properties
+cc.about=Production about message
+```
+
+to:
+
+```properties
+cc.about=Content Calendar integrated with Neon PostgreSQL for production.
+```
+
+The new description is already in this repository. For another deployment test,
+make a new wording change and save it, then commit and push:
 
 ```sh
-./mvnw spring-boot:run
+git add src/main/resources/application-production.properties
+git commit -m "Update production description for Neon PostgreSQL"
+git push origin main
 ```
 
-For local Neon, set `NEON_DATABASE_PASSWORD` in your terminal or IDE and run:
+If the description was already committed and there is no new change, trigger
+**Actions → CI → Run workflow → main** instead. Successful manual CI on
+`main` also triggers CD; deployment cannot be manually started without CI.
 
-```sh
-./mvnw spring-boot:run -Dspring-boot.run.profiles=production
+## 9. Watch GitHub Actions and verify the update
+
+In GitHub's **Actions** tab, the two workflows run in order:
+
+1. **CI** (`ci.yml`) runs the **Test and package** job: Maven `verify` on
+   Java 17, using H2 for tests.
+2. **CD - Deploy to Vercel** (`deploy.yml`) listens for CI completion through
+   `workflow_run`. Its deployment job runs only when CI succeeded for a push
+   or manual CI run on `main` in this repository. Failed or cancelled CI
+   skips deployment. Pull request CI never deploys.
+
+CD checks out the exact commit SHA that passed CI before uploading source
+through the Vercel CLI. Vercel then builds `Dockerfile.vercel` and updates
+the production deployment. Both workflow files must be committed to the
+repository's default branch (`main`) for this setup.
+
+Once both workflows are green, open:
+
+```text
+https://spring-boot-content-calendar.vercel.app/
 ```
 
-For a local container build and an H2 smoke test:
+The root endpoint returns the application properties, including the updated
+`about` value. Check `/api/content/filter/GraphQL` again to confirm the API
+still reads Neon content.
 
-```sh
-docker build -f Dockerfile.vercel -t content-calendar .
-docker run --rm -p 8080:8080 -e SPRING_PROFILES_ACTIVE=h2 content-calendar
-```
+Future pushes to `main` follow the same test-and-deploy process, except when all
+changed files are under `docs/`. CI uses `paths-ignore: ['docs/**']` for
+pushes and pull requests. Documentation-only changes start no CI run, so they
+also start no CD run. A change containing files outside `docs/` still triggers
+CI. To deploy manually, run **CI** on `main` and let successful CI trigger CD.
 
-The image defaults to production when the profile is not overridden. The runtime
-image contains the application JAR and a Java runtime, without Maven or source.
+## Troubleshooting
+
+| Problem | Check |
+| --- | --- |
+| Missing `VERCEL_*` secret | Add all three under GitHub repository secrets with the exact names |
+| Vercel token cannot access the project | Check that the token scope, Team ID, and Project ID refer to the same team/project |
+| Neon password cannot be resolved | Add `NEON_DATABASE_PASSWORD` to Vercel's Production environment, then redeploy |
+| Container cannot be detected | Check root directory `./`, filename `Dockerfile.vercel`, and that the file was pushed |
+| App listens on the wrong port | Check Vercel `PORT=8080` and `server.port=${PORT:9090}` |
+| No new workflow starts | Push a change outside `docs/` to `main`, or manually run **CI** on `main` |
+| CD skips deployment | Check CI succeeded for a push or manual run on `main`; PR, failed, and cancelled runs do not deploy |
+| Native Vercel Git deployment does not start | Expected: `git.deploymentEnabled=false`; GitHub Actions performs deployment |
+| First deployment fails | Inspect Vercel build/runtime logs for the failing build command or startup error |
 
 ## References
 
-- [Vercel container configuration and limitations](https://vercel.com/kb/guide/docker-on-vercel-vs-render)
+- [Vercel container configuration](https://vercel.com/kb/guide/docker-on-vercel-vs-render)
 - [GitHub Actions with Vercel](https://vercel.com/kb/guide/how-can-i-use-github-actions-with-vercel)
+- [Find a Vercel Team ID](https://vercel.com/docs/accounts#find-your-team-id)
+- [Vercel project settings](https://vercel.com/docs/project-configuration/general-settings)
 - [Disable native Git deployments](https://vercel.com/docs/project-configuration/git-configuration#turning-off-all-automatic-deployments)
+
+- [GitHub workflow_run trigger](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
